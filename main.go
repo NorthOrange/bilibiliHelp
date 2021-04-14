@@ -9,32 +9,35 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"math/rand"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/bitly/go-simplejson"
 )
 
 func main() {
 
-	user := user.GetUser("") // 获取 b 站用户信息
-	id := Register(user)             // 用 拿到的 用户信息注册
-	UploadAvatar(user.Avatar, id)    // 更新头像
+	user := user.GetUser("331991614") // 获取 b 站用户信息
+	id := Register(user)              // 用 拿到的 用户信息注册
+	UploadAvatar(user.Avatar, id)     // 更新头像
 
 	list := video.GetVideoList(user.Mid)
 	for _, v := range list {
 		if strings.Contains(v.Name, "互动视频") {
 			continue
 		} else {
-			GetVideo(v.Bvid)                       // 根据 bvid 下载视频
-			VideoUpload(v.Name, v.Instroction, id) // 上传视频
-			fmt.Println(v.Name)
+			if VideoSize(v.Bvid) { // 大小 超过 200 兆的视频跳过
+				GetVideo(v.Bvid)                       // 根据 bvid 下载视频
+				VideoUpload(v.Name, v.Instroction, id) // 上传视频
+				fmt.Println(v.Name)
+			} else {
+				continue
+			}
+
 		}
 	}
 }
@@ -73,7 +76,7 @@ func UploadAvatar(avatarUrl string, id string) { // 根据从 B 站获取的用�
 	w.Close()              // !!! 不关闭会失去终止边界
 
 	// 发送请求
-	postUrl := socket + "/api/upload/avatar"
+	postUrl := socket + "/api/avatar/upload"
 	req, _ := http.NewRequest("POST", postUrl, buf)
 	req.Header.Set("Content-Type", w.FormDataContentType()) // 设置 内容 类型
 	client := &http.Client{}
@@ -118,14 +121,19 @@ func VideoUpload(VideoName string, introduction string, id string) { // 上传�
 
 }
 
-func randId() (id string) { // 随机生成一个 id
-	rand := rand.New(rand.NewSource(time.Now().UnixNano()))
-	if v := rand.Intn(10); v < 2 {
-		id = fmt.Sprint(rand.Intn(10000000)) // 7 位 id
-	} else if v > 2 && v < 6 {
-		id = fmt.Sprint(rand.Intn(100000000)) // 8 位 id
+func VideoSize(Bvid string) bool {
+	cmdStr := "you-get --json https://www.bilibili.com/video/" + Bvid
+	cmd := exec.Command("bash", "-c", cmdStr)
+	log.Println("开始进行视频: " + Bvid + " 的大小判断")
+	json, _ := cmd.CombinedOutput()
+	jsondata, _ := simplejson.NewJson(json)
+
+	size, _ := jsondata.Get("streams").Get("dash-flv").Get("size").Int()
+	if size <= 0 || size > 200*1024*1024 {
+		fmt.Println("大小不正常")
+		return false
 	} else {
-		id = fmt.Sprint(rand.Intn(1000000000)) // 9 位 id
+		fmt.Println("大小正常")
+		return true
 	}
-	return
 }
